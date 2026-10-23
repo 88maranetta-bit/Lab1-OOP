@@ -1,0 +1,58 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="La1.MainPage"
+             Title="Електронна таблиця (калькулятор)"
+             BackgroundColor="#1E1E1E">
+
+    <VerticalStackLayout Spacing="10" Padding="10">
+
+        <HorizontalStackLayout Spacing="10" VerticalOptions="Center">
+            <Entry x:Name="textInput" 
+                   Placeholder="Введіть формулу..." 
+                   WidthRequest="400" 
+                   BackgroundColor="#2A2A2A" 
+                   TextColor="White"
+                   VerticalOptions="Center"/>
+            <Button Text="Порахувати" 
+                    Clicked="CalculateButton_Clicked" 
+                    BackgroundColor="#E67E22" 
+                    TextColor="White"
+                    VerticalOptions="Center"/>
+
+            <VerticalStackLayout Spacing="0" Margin="0" VerticalOptions="Center">
+                <Label Text="Збережені таблиці" 
+                       TextColor="White" 
+                       FontSize="13" 
+                       FontAttributes="Bold" 
+                       TextDecorations="Underline"
+                       HorizontalTextAlignment="Center"/>
+                <Picker x:Name="savedFilesPicker" 
+                        Title="Виберіть таблицю" 
+                        WidthRequest="220" 
+                        BackgroundColor="#CCCCCC" 
+                        TextColor="Black" 
+                        SelectedIndexChanged="SavedFilesPicker_SelectedIndexChanged" />
+            </VerticalStackLayout>
+        </HorizontalStackLayout>
+
+        <ScrollView Orientation="Horizontal">
+            <HorizontalStackLayout Spacing="5">
+                <Button Text="Зберегти" Clicked="SaveButton_Clicked" BackgroundColor="#E67E22" TextColor="White" />
+                <Button Text="Прочитати" Clicked="ReadButton_Clicked" BackgroundColor="#E67E22" TextColor="White" />
+                <Button Text="Довідка" Clicked="HelpButton_Clicked" BackgroundColor="Green" TextColor="White" FontAttributes="Bold" />
+                <Button Text="Видалити рядок" Clicked="DeleteRowButton_Clicked" BackgroundColor="#E67E22" TextColor="White" />
+                <Button Text="Видалити стовпчик" Clicked="DeleteColumnButton_Clicked" BackgroundColor="#E67E22" TextColor="White" />
+                <Button Text="Додати рядок" Clicked="AddRowButton_Clicked" BackgroundColor="#E67E22" TextColor="White" />
+                <Button Text="Додати стовпчик" Clicked="AddColumnButton_Clicked" BackgroundColor="#E67E22" TextColor="White" />
+                <Button Text="Вийти" Clicked="ExitButton_Clicked" BackgroundColor="#C0392B" TextColor="White" />
+            </HorizontalStackLayout>
+        </ScrollView>
+
+        <ScrollView Orientation="Both">
+            <Grid x:Name="grid" RowSpacing="1" ColumnSpacing="1" BackgroundColor="#555555">
+            </Grid>
+        </ScrollView>
+
+    </VerticalStackLayout>
+</ContentPage>

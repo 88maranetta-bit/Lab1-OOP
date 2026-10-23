@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="MAUI_LR1_1.MainPage"
+             BackgroundColor="DarkGray">
+
+    <VerticalStackLayout Spacing="10" Padding="15">
+        
+        <!-- Поле вводу формули з іменем textInput -->
+        <HorizontalStackLayout Spacing="10">
+            <Entry x:Name="textInput" 
+                   Placeholder="Введіть формулу..." 
+                   HorizontalOptions="FillAndExpand" />
+            <Button Text="Порахувати" 
+                    BackgroundColor="Green" 
+                    TextColor="White" 
+                    Clicked="OnCalculatePressed" />
+        </HorizontalStackLayout>
+
+        <!-- Панель кнопок із твоїми оригінальними назвами подій -->
+        <ScrollView Orientation="Horizontal">
+            <HorizontalStackLayout Spacing="8">
+                <Button Text="Зберегти" BackgroundColor="Green" TextColor="White" Clicked="OnSaveFilePressed"/>
+                <Button Text="Прочитати" BackgroundColor="Green" TextColor="White" Clicked="OnOpenFilePressed"/>
+                <Button Text="Довідка" BackgroundColor="Green" TextColor="White" Clicked="OnHelpPressed"/>
+                <Button Text="Видалити рядок" BackgroundColor="Green" TextColor="White" Clicked="OnRemoveRowPressed"/>
+                <Button Text="Видалити стовпчик" BackgroundColor="Green" TextColor="White" Clicked="OnRemoveColumnPressed"/>
+                <Button Text="Додати рядок" BackgroundColor="Green" TextColor="White" Clicked="OnInsertRowPressed"/>
+                <Button Text="Додати стовпчик" BackgroundColor="Green" TextColor="White" Clicked="OnInsertColumnPressed"/>
+                <Button Text="Вийти" BackgroundColor="Red" TextColor="White" Clicked="OnExitPressed"/>
+            </HorizontalStackLayout>
+        </ScrollView>
+
+        <!-- Сітка таблиці з ім'ям grid -->
+        <Grid x:Name="grid" />
+
+    </VerticalStackLayout>
+</ContentPage>
