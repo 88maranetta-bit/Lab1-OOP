@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -8,10 +9,12 @@ namespace La1
     public class FormulaEvaluatorVisitor
     {
         private readonly Func<string, double> _cellValueGetter;
+        private readonly HashSet<string> _visitedCells;
 
-        public FormulaEvaluatorVisitor(Func<string, double> cellValueGetter)
+        public FormulaEvaluatorVisitor(Func<string, double> cellValueGetter, HashSet<string>? visitedCells = null)
         {
             _cellValueGetter = cellValueGetter;
+            _visitedCells = visitedCells ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
 
         public double Evaluate(string formula)
@@ -142,7 +145,7 @@ namespace La1
 
         private string[] SplitArguments(string argsStr)
         {
-            var parts = new System.Collections.Generic.List<string>();
+            var parts = new List<string>();
             int parenthesisDepth = 0;
             int lastIndex = 0;
 
@@ -165,12 +168,29 @@ namespace La1
             token = token.Trim().ToUpper();
             if (Regex.IsMatch(token, @"^[A-Z]+\d+$"))
             {
-                return _cellValueGetter(token);
+                if (_visitedCells.Contains(token))
+                {
+                    throw new Exception("Помилка циклу: виявлено циклічне посилання!");
+                }
+
+                _visitedCells.Add(token);
+                try
+                {
+                    var subVisitor = new FormulaEvaluatorVisitor(_cellValueGetter, new HashSet<string>(_visitedCells, StringComparer.OrdinalIgnoreCase));
+                    double val = _cellValueGetter(token);
+                    return val;
+                }
+                finally
+                {
+                    _visitedCells.Remove(token);
+                }
             }
-            if (double.TryParse(token, NumberStyles.Any, CultureInfo.InvariantCulture, out double val))
+
+            if (double.TryParse(token, NumberStyles.Any, CultureInfo.InvariantCulture, out double resultVal))
             {
-                return val;
+                return resultVal;
             }
+
             return 0.0;
         }
     }
