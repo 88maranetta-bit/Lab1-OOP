@@ -23,124 +23,182 @@ namespace La1
                 return 0.0;
 
             formula = formula.Trim();
+
+            if (formula.Count(c => c == '=') > 1 || (formula.Contains("=") && !formula.StartsWith("=")))
+            {
+                throw new Exception("Помилка значення");
+            }
+
             if (formula.StartsWith("="))
                 formula = formula.Substring(1);
 
             formula = formula.Trim();
 
-            if (formula.StartsWith("max(", StringComparison.OrdinalIgnoreCase) && formula.EndsWith(")"))
+            if (formula.Contains("="))
             {
-                var argsStr = formula.Substring(4, formula.Length - 5);
-                var parts = SplitArguments(argsStr);
-                if (parts.Length == 2)
-                {
-                    return Math.Max(Evaluate(parts[0]), Evaluate(parts[1]));
-                }
-            }
-            if (formula.StartsWith("min(", StringComparison.OrdinalIgnoreCase) && formula.EndsWith(")"))
-            {
-                var argsStr = formula.Substring(4, formula.Length - 5);
-                var parts = SplitArguments(argsStr);
-                if (parts.Length == 2)
-                {
-                    return Math.Min(Evaluate(parts[0]), Evaluate(parts[1]));
-                }
+                throw new Exception("Помилка значення");
             }
 
-            char[] lowPriorityOps = { '+', '-' };
-            foreach (var op in lowPriorityOps)
+            string lower = formula.ToLower();
+            var matches = Regex.Matches(lower, @"[a-z]+");
+            foreach (Match m in matches)
             {
-                int index = FindMainOperator(formula, op);
-                if (index > 0)
+                string word = m.Value;
+
+                if (word == "max" || word == "min" || word == "div" || word == "mod" || word.Length == 1)
+                    continue;
+
+                int index = m.Index + m.Length;
+                bool isCellRef = index < lower.Length && char.IsDigit(lower[index]);
+
+                if (!isCellRef || word.Length > 2)
                 {
-                    string leftPart = formula.Substring(0, index);
-                    string rightPart = formula.Substring(index + 1);
-                    double leftVal = Evaluate(leftPart);
-                    double rightVal = Evaluate(rightPart);
-                    return op == '+' ? leftVal + rightVal : leftVal - rightVal;
+                    throw new Exception("Помилка імені");
                 }
             }
 
-            int divIndex = FindKeyword(formula, "div");
-            if (divIndex > 0)
-            {
-                string leftPart = formula.Substring(0, divIndex);
-                string rightPart = formula.Substring(divIndex + 3);
-                double leftVal = Evaluate(leftPart);
-                double rightVal = Evaluate(rightPart);
-                return rightVal != 0 ? Math.Truncate(leftVal / rightVal) : throw new DivideByZeroException("Ділення на нуль");
-            }
-
-            int modIndex = FindKeyword(formula, "mod");
-            if (modIndex > 0)
-            {
-                string leftPart = formula.Substring(0, modIndex);
-                string rightPart = formula.Substring(modIndex + 3);
-                double leftVal = Evaluate(leftPart);
-                double rightVal = Evaluate(rightPart);
-                return rightVal != 0 ? leftVal % rightVal : throw new DivideByZeroException("Ділення на нуль");
-            }
-
-            char[] midPriorityOps = { '*', '/' };
-            foreach (var op in midPriorityOps)
-            {
-                int index = FindMainOperator(formula, op);
-                if (index > 0)
-                {
-                    string leftPart = formula.Substring(0, index);
-                    string rightPart = formula.Substring(index + 1);
-                    double leftVal = Evaluate(leftPart);
-                    double rightVal = Evaluate(rightPart);
-                    return op == '*' ? leftVal * rightVal : (rightVal != 0 ? leftVal / rightVal : throw new DivideByZeroException("Ділення на нуль"));
-                }
-            }
-
-            int powIndex = FindMainOperator(formula, '^');
-            if (powIndex > 0)
-            {
-                string leftPart = formula.Substring(0, powIndex);
-                string rightPart = formula.Substring(powIndex + 1);
-                double leftVal = Evaluate(leftPart);
-                double rightVal = Evaluate(rightPart);
-                return Math.Pow(leftVal, rightVal);
-            }
-
-            return GetValue(formula);
+            return ParseExpression(ref formula);
         }
 
-        private int FindMainOperator(string s, char op)
+        private double ParseExpression(ref string s)
         {
-            int parenthesisDepth = 0;
-            for (int i = s.Length - 1; i >= 0; i--)
+            double value = ParseTerm(ref s);
+            s = s.Trim();
+            while (s.Length > 0 && (s[0] == '+' || s[0] == '-'))
             {
-                if (s[i] == ')') parenthesisDepth++;
-                else if (s[i] == '(') parenthesisDepth--;
-                else if (parenthesisDepth == 0 && s[i] == op)
-                {
-                    return i;
-                }
+                char op = s[0];
+                s = s.Substring(1).Trim();
+                double right = ParseTerm(ref s);
+                value = op == '+' ? value + right : value - right;
+                s = s.Trim();
             }
-            return -1;
+            return value;
         }
 
-        private int FindKeyword(string s, string keyword)
+        private double ParseTerm(ref string s)
         {
-            int parenthesisDepth = 0;
-            for (int i = s.Length - keyword.Length; i >= 0; i--)
+            double value = ParsePower(ref s);
+            s = s.Trim();
+            while (s.Length > 0)
             {
-                if (s[i] == ')') parenthesisDepth++;
-                else if (s[i] == '(') parenthesisDepth--;
-                else if (parenthesisDepth == 0 && string.Compare(s, i, keyword, 0, keyword.Length, true, CultureInfo.InvariantCulture) == 0)
+                if (s.StartsWith("div", StringComparison.OrdinalIgnoreCase))
                 {
-                    bool boundaryBefore = (i == 0 || !char.IsLetterOrDigit(s[i - 1]));
-                    bool boundaryAfter = (i + keyword.Length == s.Length || !char.IsLetterOrDigit(s[i + keyword.Length]));
-                    if (boundaryBefore && boundaryAfter)
+                    s = s.Substring(3).Trim();
+                    double right = ParsePower(ref s);
+                    if (right == 0) throw new DivideByZeroException("Ділення на нуль");
+                    value = Math.Truncate(value / right);
+                }
+                else if (s.StartsWith("mod", StringComparison.OrdinalIgnoreCase))
+                {
+                    s = s.Substring(3).Trim();
+                    double right = ParsePower(ref s);
+                    if (right == 0) throw new DivideByZeroException("Ділення на нуль");
+                    value = value % right;
+                }
+                else if (s[0] == '*' || s[0] == '/')
+                {
+                    char op = s[0];
+                    s = s.Substring(1).Trim();
+                    double right = ParsePower(ref s);
+                    if (op == '/' && right == 0) throw new DivideByZeroException("Ділення на нуль");
+                    value = op == '*' ? value * right : value / right;
+                }
+                else
+                {
+                    break;
+                }
+                s = s.Trim();
+            }
+            return value;
+        }
+
+        private double ParsePower(ref string s)
+        {
+            double value = ParseFactor(ref s);
+            s = s.Trim();
+            if (s.Length > 0 && s[0] == '^')
+            {
+                s = s.Substring(1).Trim();
+                double right = ParsePower(ref s);
+                value = Math.Pow(value, right);
+            }
+            return value;
+        }
+
+        private double ParseFactor(ref string s)
+        {
+            s = s.Trim();
+
+            if (s.StartsWith("("))
+            {
+                int depth = 0;
+                int closeIndex = -1;
+                for (int i = 0; i < s.Length; i++)
+                {
+                    if (s[i] == '(') depth++;
+                    else if (s[i] == ')') depth--;
+
+                    if (depth == 0)
                     {
-                        return i;
+                        closeIndex = i;
+                        break;
+                    }
+                }
+
+                if (closeIndex > 0)
+                {
+                    string inner = s.Substring(1, closeIndex - 1);
+                    s = s.Substring(closeIndex + 1).Trim();
+                    return Evaluate(inner);
+                }
+            }
+
+            if (s.StartsWith("max(", StringComparison.OrdinalIgnoreCase) || s.StartsWith("min(", StringComparison.OrdinalIgnoreCase))
+            {
+                bool isMax = s.StartsWith("max(", StringComparison.OrdinalIgnoreCase);
+                int len = 4;
+                int depth = 0;
+                int closeIndex = -1;
+                for (int i = len - 1; i < s.Length; i++)
+                {
+                    if (s[i] == '(') depth++;
+                    else if (s[i] == ')') depth--;
+
+                    if (depth == 0)
+                    {
+                        closeIndex = i;
+                        break;
+                    }
+                }
+
+                if (closeIndex > 0)
+                {
+                    string argsStr = s.Substring(len, closeIndex - len);
+                    s = s.Substring(closeIndex + 1).Trim();
+                    var parts = SplitArguments(argsStr);
+                    if (parts.Length == 2)
+                    {
+                        double v1 = Evaluate(parts[0]);
+                        double v2 = Evaluate(parts[1]);
+                        return isMax ? Math.Max(v1, v2) : Math.Min(v1, v2);
                     }
                 }
             }
-            return -1;
+
+            int matchLen = 0;
+            while (matchLen < s.Length && (char.IsLetterOrDigit(s[matchLen]) || s[matchLen] == '.'))
+            {
+                matchLen++;
+            }
+
+            if (matchLen > 0)
+            {
+                string token = s.Substring(0, matchLen);
+                s = s.Substring(matchLen).Trim();
+                return GetValue(token);
+            }
+
+            throw new Exception("Помилка імені");
         }
 
         private string[] SplitArguments(string argsStr)
@@ -166,17 +224,17 @@ namespace La1
         private double GetValue(string token)
         {
             token = token.Trim().ToUpper();
+
             if (Regex.IsMatch(token, @"^[A-Z]+\d+$"))
             {
                 if (_visitedCells.Contains(token))
                 {
-                    throw new Exception("Помилка циклу: виявлено циклічне посилання!");
+                    throw new Exception("Помилка циклу");
                 }
 
                 _visitedCells.Add(token);
                 try
                 {
-                    var subVisitor = new FormulaEvaluatorVisitor(_cellValueGetter, new HashSet<string>(_visitedCells, StringComparer.OrdinalIgnoreCase));
                     double val = _cellValueGetter(token);
                     return val;
                 }
@@ -191,7 +249,7 @@ namespace La1
                 return resultVal;
             }
 
-            return 0.0;
+            throw new Exception("Помилка імені");
         }
     }
 }

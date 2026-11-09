@@ -6,7 +6,6 @@
 
     <VerticalStackLayout Spacing="10" Padding="15">
         
-        <!-- Поле вводу формули з іменем textInput -->
         <HorizontalStackLayout Spacing="10">
             <Entry x:Name="textInput" 
                    Placeholder="Введіть формулу..." 
@@ -17,7 +16,6 @@
                     Clicked="OnCalculatePressed" />
         </HorizontalStackLayout>
 
-        <!-- Панель кнопок із твоїми оригінальними назвами подій -->
         <ScrollView Orientation="Horizontal">
             <HorizontalStackLayout Spacing="8">
                 <Button Text="Зберегти" BackgroundColor="Green" TextColor="White" Clicked="OnSaveFilePressed"/>
@@ -31,7 +29,6 @@
             </HorizontalStackLayout>
         </ScrollView>
 
-        <!-- Сітка таблиці з ім'ям grid -->
         <Grid x:Name="grid" />
 
     </VerticalStackLayout>

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Microsoft.Maui.Controls;
@@ -9,9 +10,7 @@ namespace La1
 {
     public partial class MainPage : ContentPage
     {
-        const int CountColumn = 10;
-        const int CountRow = 10;
-        private readonly Dictionary<string, string> _cellFormulas = new(StringComparer.OrdinalIgnoreCase);
+        private readonly TableEngine _tableEngine = new();
 
         public MainPage()
         {
@@ -30,10 +29,9 @@ namespace La1
             try
             {
                 string folderPath = FileSystem.AppDataDirectory;
-                var files = Directory.GetFiles(folderPath, "*.json")
-                                     .Select(Path.GetFileName)
-                                     .ToList();
-                savedFilesPicker.ItemsSource = files;
+                savedFilesPicker.ItemsSource = Directory.GetFiles(folderPath, "*.json")
+                                                        .Select(Path.GetFileName)
+                                                        .ToList();
             }
             catch
             {
@@ -48,69 +46,69 @@ namespace La1
 
         private void AddColumnsAndColumnLabels()
         {
-            for (int col = 0; col < CountColumn + 1; col++)
+            for (int col = 0; col <= TableConfig.CountColumn; col++)
             {
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = 80 });
-                if (col > 0)
-                {
-                    var label = new Label
-                    {
-                        Text = GetColumnName(col),
-                        VerticalOptions = LayoutOptions.Center,
-                        HorizontalOptions = LayoutOptions.Center,
-                        FontAttributes = FontAttributes.Bold,
-                        TextColor = Colors.White,
-                        BackgroundColor = Colors.Transparent
-                    };
-                    Microsoft.Maui.Controls.Grid.SetRow(label, 0);
-                    Microsoft.Maui.Controls.Grid.SetColumn(label, col);
-                    grid.Children.Add(label);
-                }
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = TableConfig.CellWidth });
+                if (col <= 0) continue;
+
+                var label = CreateHeaderLabel(GetColumnName(col), 0, col);
+                grid.Children.Add(label);
             }
         }
 
         private void AddRowsAndCellEntries()
         {
-            for (int row = 0; row < CountRow; row++)
+            for (int row = 0; row < TableConfig.CountRow; row++)
             {
-                grid.RowDefinitions.Add(new RowDefinition { Height = 40 });
+                grid.RowDefinitions.Add(new RowDefinition { Height = TableConfig.CellHeight });
 
-                var label = new Label
-                {
-                    Text = (row + 1).ToString(),
-                    VerticalOptions = LayoutOptions.Center,
-                    HorizontalOptions = LayoutOptions.Center,
-                    FontAttributes = FontAttributes.Bold,
-                    TextColor = Colors.White,
-                    BackgroundColor = Colors.Transparent
-                };
-                Microsoft.Maui.Controls.Grid.SetRow(label, row + 1);
-                Microsoft.Maui.Controls.Grid.SetColumn(label, 0);
-                grid.Children.Add(label);
+                var rowLabel = CreateHeaderLabel((row + 1).ToString(), row + 1, 0);
+                grid.Children.Add(rowLabel);
 
-                for (int col = 0; col < CountColumn; col++)
+                for (int col = 0; col < TableConfig.CountColumn; col++)
                 {
                     string cellName = GetColumnName(col + 1) + (row + 1);
-
-                    var entry = new Entry
-                    {
-                        Text = "",
-                        StyleId = cellName,
-                        WidthRequest = 80,
-                        HeightRequest = 40,
-                        VerticalOptions = LayoutOptions.Center,
-                        HorizontalOptions = LayoutOptions.Center,
-                        TextColor = Colors.White,
-                        BackgroundColor = Color.FromArgb("#2A2A2A")
-                    };
-
-                    entry.Focused += Entry_Focused;
-                    entry.Unfocused += Entry_Unfocused;
-                    Microsoft.Maui.Controls.Grid.SetRow(entry, row + 1);
-                    Microsoft.Maui.Controls.Grid.SetColumn(entry, col + 1);
+                    var entry = CreateCellEntry(cellName, row + 1, col + 1);
                     grid.Children.Add(entry);
                 }
             }
+        }
+
+        private Label CreateHeaderLabel(string text, int row, int col)
+        {
+            var label = new Label
+            {
+                Text = text,
+                VerticalOptions = LayoutOptions.Center,
+                HorizontalOptions = LayoutOptions.Center,
+                FontAttributes = FontAttributes.Bold,
+                TextColor = Colors.White,
+                BackgroundColor = Colors.Transparent
+            };
+            Microsoft.Maui.Controls.Grid.SetRow(label, row);
+            Microsoft.Maui.Controls.Grid.SetColumn(label, col);
+            return label;
+        }
+
+        private Entry CreateCellEntry(string cellName, int row, int col)
+        {
+            var entry = new Entry
+            {
+                Text = "",
+                StyleId = cellName,
+                WidthRequest = TableConfig.CellWidth,
+                HeightRequest = TableConfig.CellHeight,
+                VerticalOptions = LayoutOptions.Center,
+                HorizontalOptions = LayoutOptions.Center,
+                TextColor = Colors.White,
+                BackgroundColor = TableConfig.CellBackgroundColor
+            };
+            entry.Focused += Entry_Focused;
+            entry.Unfocused += Entry_Unfocused;
+
+            Microsoft.Maui.Controls.Grid.SetRow(entry, row);
+            Microsoft.Maui.Controls.Grid.SetColumn(entry, col);
+            return entry;
         }
 
         private string GetColumnName(int colIndex)
@@ -128,8 +126,7 @@ namespace La1
 
         private void RefreshGridIndices()
         {
-            var rowLabels = grid.Children
-                .OfType<Label>()
+            var rowLabels = grid.Children.OfType<Label>()
                 .Where(l => Microsoft.Maui.Controls.Grid.GetColumn(l) == 0 && Microsoft.Maui.Controls.Grid.GetRow(l) > 0)
                 .OrderBy(l => Microsoft.Maui.Controls.Grid.GetRow(l))
                 .ToList();
@@ -137,53 +134,24 @@ namespace La1
             int index = 1;
             foreach (var lbl in rowLabels)
             {
-                lbl.Text = index.ToString();
-                index++;
+                lbl.Text = index++.ToString();
             }
 
             for (int c = 1; c < grid.ColumnDefinitions.Count; c++)
             {
-                var label = grid.Children.FirstOrDefault(cld => cld is Label l && Microsoft.Maui.Controls.Grid.GetRow(l) == 0 && Microsoft.Maui.Controls.Grid.GetColumn(l) == c) as Label;
-                if (label != null)
+                if (grid.Children.FirstOrDefault(cld => cld is Label l && Microsoft.Maui.Controls.Grid.GetRow(l) == 0 && Microsoft.Maui.Controls.Grid.GetColumn(l) == c) is Label label)
                 {
                     label.Text = GetColumnName(c);
                 }
             }
 
-            foreach (var child in grid.Children)
+            foreach (var child in grid.Children.OfType<Entry>())
             {
-                if (child is Entry entry)
+                int row = Microsoft.Maui.Controls.Grid.GetRow(child);
+                int col = Microsoft.Maui.Controls.Grid.GetColumn(child);
+                if (row > 0 && col > 0)
                 {
-                    int row = Microsoft.Maui.Controls.Grid.GetRow(entry);
-                    int col = Microsoft.Maui.Controls.Grid.GetColumn(entry);
-                    if (row > 0 && col > 0)
-                    {
-                        entry.StyleId = GetColumnName(col) + row;
-                    }
-                }
-            }
-        }
-
-        private void ValidateFormula(string formula)
-        {
-            string lower = formula.ToLower();
-            var matches = Regex.Matches(lower, @"[a-zA-Z]+");
-            foreach (Match m in matches)
-            {
-                string w = m.Value;
-                if (w != "max" && w != "min" && w != "div" && w != "mod")
-                {
-                    int index = m.Index + m.Length;
-                    bool isCellRef = false;
-                    if (index < lower.Length && char.IsDigit(lower[index]))
-                    {
-                        isCellRef = true;
-                    }
-
-                    if (!isCellRef)
-                    {
-                        throw new Exception("Помилка імені");
-                    }
+                    child.StyleId = GetColumnName(col) + row;
                 }
             }
         }
@@ -192,12 +160,9 @@ namespace La1
         {
             if (sender is Entry entry && !string.IsNullOrEmpty(entry.StyleId))
             {
-                if (showFormulasSwitch != null && showFormulasSwitch.IsToggled)
-                {
-                    return;
-                }
+                if (showFormulasSwitch?.IsToggled == true) return;
 
-                if (_cellFormulas.TryGetValue(entry.StyleId, out string? formula))
+                if (_tableEngine.CellFormulas.TryGetValue(entry.StyleId, out string? formula))
                 {
                     entry.Text = formula;
                 }
@@ -208,319 +173,318 @@ namespace La1
             }
         }
 
-        private async void Entry_Unfocused(object? sender, EventArgs e)
+        private void Entry_Unfocused(object? sender, EventArgs e)
         {
             if (sender is Entry entry && !string.IsNullOrEmpty(entry.StyleId))
             {
-                if (showFormulasSwitch != null && showFormulasSwitch.IsToggled)
-                {
-                    return;
-                }
+                if (showFormulasSwitch?.IsToggled == true) return;
 
                 string text = entry.Text?.Trim() ?? "";
-                if (text.StartsWith("="))
+                if (!string.IsNullOrEmpty(text))
                 {
-                    _cellFormulas[entry.StyleId] = text;
-                    try
+                    if (!text.StartsWith("=") && (text.Contains("+") || text.Contains("-") || text.Contains("*") || text.Contains("/") || text.Contains("^") || text.Contains("(")))
                     {
-                        string formula = text.Substring(1);
-                        ValidateFormula(formula);
-                        var evaluator = new FormulaEvaluatorVisitor(name => GetCellValue(name, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { entry.StyleId }));
-                        double result = evaluator.Evaluate(formula);
-                        entry.Text = result.ToString(CultureInfo.InvariantCulture);
-                        entry.TextColor = Colors.White;
+                        text = "=" + text;
+                        entry.Text = text;
                     }
-                    catch (Exception ex)
-                    {
-                        entry.TextColor = Colors.Red;
-                        string msg = ex.Message;
-                        if (msg.Contains("циклу"))
-                        {
-                            entry.Text = "ERR: CYCLE";
-                        }
-                        else if (msg.Contains("ділення на нуль", StringComparison.OrdinalIgnoreCase) || msg.Contains("Division by zero", StringComparison.OrdinalIgnoreCase))
-                        {
-                            entry.Text = "#DIV/0!";
-                        }
-                        else if (msg.Contains("ім'я", StringComparison.OrdinalIgnoreCase) || msg.Contains("name", StringComparison.OrdinalIgnoreCase))
-                        {
-                            entry.Text = "#NAME?";
-                        }
-                        else if (msg.Contains("значення", StringComparison.OrdinalIgnoreCase) || msg.Contains("value", StringComparison.OrdinalIgnoreCase))
-                        {
-                            entry.Text = "#VALUE!";
-                        }
-                        else
-                        {
-                            entry.Text = "#REF!";
-                        }
-                    }
+                    _tableEngine.SetCellFormula(entry.StyleId, text);
                 }
                 else
                 {
-                    _cellFormulas.Remove(entry.StyleId);
-                    entry.TextColor = Colors.White;
+                    _tableEngine.SetCellFormula(entry.StyleId, string.Empty);
                 }
 
-                if (textInput != null)
-                {
-                    textInput.Text = text;
-                }
+                if (textInput != null) textInput.Text = text;
             }
             RecalculateAllCells();
         }
 
-        private void ShowFormulasSwitch_Toggled(object? sender, ToggledEventArgs e)
+        public void ShowFormulasSwitch_Toggled(object? sender, ToggledEventArgs e)
         {
             bool showFormulas = e.Value;
 
-            foreach (var child in grid.Children.ToList())
+            foreach (var entry in grid.Children.OfType<Entry>().Where(e => !string.IsNullOrEmpty(e.StyleId)))
             {
-                if (child is Entry entry && !string.IsNullOrEmpty(entry.StyleId))
+                if (showFormulas)
                 {
-                    string cellName = entry.StyleId;
-
-                    if (showFormulas)
-                    {
-                        if (_cellFormulas.TryGetValue(cellName, out string? formula))
-                        {
-                            entry.Text = formula;
-                            entry.TextColor = Colors.White;
-                        }
-                    }
-                    else
-                    {
-                        if (!entry.IsFocused)
-                        {
-                            RecalculateSingleCell(entry);
-                        }
-                    }
+                    entry.Text = _tableEngine.CellFormulas.TryGetValue(entry.StyleId, out string? formula) ? formula : GetRawEntryValue(entry.StyleId);
+                    entry.TextColor = Colors.White;
+                }
+                else if (!entry.IsFocused)
+                {
+                    RecalculateSingleCell(entry);
                 }
             }
 
-            if (!showFormulas)
-            {
-                RecalculateAllCells();
-            }
+            if (!showFormulas) RecalculateAllCells();
+        }
+
+        private string GetRawEntryValue(string cellName)
+        {
+            return grid.Children.OfType<Entry>().FirstOrDefault(e => e.StyleId?.ToUpper() == cellName.ToUpper())?.Text?.Trim() ?? "";
         }
 
         private void RecalculateSingleCell(Entry entry)
         {
-            if (_cellFormulas.TryGetValue(entry.StyleId, out string? formulaText))
+            bool hasFormula = _tableEngine.CellFormulas.TryGetValue(entry.StyleId, out string? formulaText) && !string.IsNullOrEmpty(formulaText);
+            bool hasText = !string.IsNullOrEmpty(entry.Text);
+
+            if (!hasFormula && !hasText)
             {
-                try
-                {
-                    string formula = formulaText.Substring(1);
-                    ValidateFormula(formula);
-                    var evaluator = new FormulaEvaluatorVisitor(name => GetCellValue(name, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { entry.StyleId }));
-                    double result = evaluator.Evaluate(formula);
-                    entry.Text = result.ToString(CultureInfo.InvariantCulture);
-                    entry.TextColor = Colors.White;
-                }
-                catch (Exception ex)
-                {
-                    entry.TextColor = Colors.Red;
-                    string msg = ex.Message;
-                    if (msg.Contains("ділення на нуль", StringComparison.OrdinalIgnoreCase))
-                        entry.Text = "#DIV/0!";
-                    else if (msg.Contains("ім'я", StringComparison.OrdinalIgnoreCase))
-                        entry.Text = "#NAME?";
-                    else if (msg.Contains("значення", StringComparison.OrdinalIgnoreCase))
-                        entry.Text = "#VALUE!";
-                    else
-                        entry.Text = "#REF!";
-                }
+                entry.Text = "";
+                entry.TextColor = Colors.White;
+                return;
             }
+
+            string currentText = entry.Text?.Trim() ?? "";
+
+            if (IsInvalidCellReferenceFormat(currentText))
+            {
+                entry.TextColor = Colors.Red;
+                entry.Text = "ERR: REF";
+                return;
+            }
+
+            if (Regex.IsMatch(currentText, @"/\s*0(\.0+)?(\b|[\+\-\*\/\)]|$)", RegexOptions.IgnoreCase))
+            {
+                entry.TextColor = Colors.Red;
+                entry.Text = "ERR: DIV/0";
+                return;
+            }
+
+            if (!currentText.StartsWith("=") && !double.TryParse(currentText, NumberStyles.Any, CultureInfo.InvariantCulture, out _))
+            {
+                entry.TextColor = Colors.Red;
+                entry.Text = "ERR: NAME";
+                return;
+            }
+
+            try
+            {
+                double result = GetCellValue(entry.StyleId, null);
+                entry.Text = result.ToString(CultureInfo.InvariantCulture);
+                entry.TextColor = Colors.White;
+            }
+            catch (Exception ex)
+            {
+                entry.TextColor = Colors.Red;
+                entry.Text = ErrorResolver.Resolve(ex.Message);
+            }
+        }
+
+        private bool IsInvalidCellReferenceFormat(string cellName)
+        {
+            if (cellName.StartsWith("=")) return false;
+            Match m = Regex.Match(cellName, @"^([A-Z]+)(\d+)$");
+            if (!m.Success) return false;
+
+            string colStr = m.Groups[1].Value;
+            int rowNum = int.Parse(m.Groups[2].Value);
+            int colIndex = 0;
+            foreach (char c in colStr) colIndex = colIndex * 26 + (c - 'A' + 1);
+
+            return rowNum < 1 || rowNum > grid.RowDefinitions.Count - 1 || colIndex < 1 || colIndex > grid.ColumnDefinitions.Count - 1;
         }
 
         private void RecalculateAllCells()
         {
-            if (showFormulasSwitch != null && showFormulasSwitch.IsToggled)
-            {
-                return;
-            }
+            if (showFormulasSwitch?.IsToggled == true) return;
 
-            foreach (var kvp in _cellFormulas)
+            foreach (var child in grid.Children.OfType<Entry>().Where(c => !string.IsNullOrEmpty(c.StyleId) && !c.IsFocused))
             {
-                string cellName = kvp.Key;
-                string formulaText = kvp.Value;
+                bool hasFormula = _tableEngine.CellFormulas.TryGetValue(child.StyleId, out string? formulaText) && !string.IsNullOrEmpty(formulaText);
+                bool hasText = !string.IsNullOrEmpty(child.Text);
 
-                var entry = grid.Children.OfType<Entry>().FirstOrDefault(e => e.StyleId?.Equals(cellName, StringComparison.OrdinalIgnoreCase) == true);
-                if (entry != null && !entry.IsFocused)
+                if (!hasFormula && !hasText)
                 {
-                    try
-                    {
-                        string formula = formulaText.Substring(1);
-                        ValidateFormula(formula);
-                        var evaluator = new FormulaEvaluatorVisitor(name => GetCellValue(name, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { cellName }));
-                        double result = evaluator.Evaluate(formula);
+                    child.Text = "";
+                    child.TextColor = Colors.White;
+                    continue;
+                }
 
-                        entry.Text = result.ToString(CultureInfo.InvariantCulture);
-                        entry.TextColor = Colors.White;
-                    }
-                    catch (Exception ex)
+                string currentText = child.Text?.Trim() ?? "";
+
+                if (IsInvalidCellReferenceFormat(currentText))
+                {
+                    child.TextColor = Colors.Red;
+                    child.Text = "ERR: REF";
+                    continue;
+                }
+
+                if (Regex.IsMatch(currentText, @"/\s*0(\.0+)?(\b|[\+\-\*\/\)]|$)", RegexOptions.IgnoreCase))
+                {
+                    child.TextColor = Colors.Red;
+                    child.Text = "ERR: DIV/0";
+                    continue;
+                }
+
+                if (!currentText.StartsWith("=") && !double.TryParse(currentText, NumberStyles.Any, CultureInfo.InvariantCulture, out _))
+                {
+                    if (!_tableEngine.CellFormulas.TryGetValue(child.StyleId, out string? storedFormula) || !storedFormula.StartsWith("="))
                     {
-                        entry.TextColor = Colors.Red;
-                        string msg = ex.Message;
-                        if (msg.Contains("циклу"))
-                        {
-                            entry.Text = "ERR: CYCLE";
-                        }
-                        else if (msg.Contains("ділення на нуль", StringComparison.OrdinalIgnoreCase))
-                        {
-                            entry.Text = "#DIV/0!";
-                        }
-                        else if (msg.Contains("ім'я", StringComparison.OrdinalIgnoreCase))
-                        {
-                            entry.Text = "#NAME?";
-                        }
-                        else if (msg.Contains("значення", StringComparison.OrdinalIgnoreCase))
-                        {
-                            entry.Text = "#VALUE!";
-                        }
-                        else
-                        {
-                            entry.Text = "#REF!";
-                        }
+                        child.TextColor = Colors.Red;
+                        child.Text = "ERR: NAME";
+                        continue;
                     }
+                }
+
+                try
+                {
+                    double result = GetCellValue(child.StyleId, null);
+                    child.Text = result.ToString(CultureInfo.InvariantCulture);
+                    child.TextColor = Colors.White;
+                }
+                catch (Exception ex)
+                {
+                    child.TextColor = Colors.Red;
+                    child.Text = ErrorResolver.Resolve(ex.Message);
                 }
             }
         }
 
-        private double GetCellValue(string cellName, HashSet<string>? visited = null)
+        private double GetCellValue(string cellName, HashSet<string>? visiting)
         {
-            if (visited == null)
+            cellName = cellName?.Trim().ToUpper() ?? "";
+
+            Match nameMatch = Regex.Match(cellName, @"^([A-Z]+)(\d+)$");
+            if (!nameMatch.Success) throw new Exception("Помилка імені");
+
+            string colStr = nameMatch.Groups[1].Value;
+            int rowNum = int.Parse(nameMatch.Groups[2].Value);
+            int colIndex = 0;
+            foreach (char c in colStr) colIndex = colIndex * 26 + (c - 'A' + 1);
+
+            if (rowNum < 1 || rowNum > grid.RowDefinitions.Count - 1 || colIndex < 1 || colIndex > grid.ColumnDefinitions.Count - 1)
             {
-                visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                throw new Exception("Помилка посилання");
             }
 
-            cellName = cellName.Trim().ToUpper();
+            var entry = grid.Children.OfType<Entry>().FirstOrDefault(e =>
+                Microsoft.Maui.Controls.Grid.GetRow(e) == rowNum &&
+                Microsoft.Maui.Controls.Grid.GetColumn(e) == colIndex);
 
-            if (visited.Contains(cellName))
+            if (entry == null) throw new Exception("Помилка посилання");
+
+            string formulaSource = _tableEngine.CellFormulas.TryGetValue(cellName, out string? engineFormula) && !string.IsNullOrEmpty(engineFormula)
+                ? engineFormula
+                : (entry.Text?.Trim() ?? "");
+
+            if (string.IsNullOrEmpty(formulaSource) || formulaSource == "=") return 0.0;
+
+            if (formulaSource.Equals("#N/A", StringComparison.OrdinalIgnoreCase)) throw new Exception("#N/A");
+
+            if (Regex.IsMatch(formulaSource, @"/\s*0(\.0+)?(\b|[\+\-\*\/\)]|$)", RegexOptions.IgnoreCase))
             {
-                throw new Exception("Помилка циклу: виявлено циклічне посилання!");
+                throw new DivideByZeroException();
             }
 
-            visited.Add(cellName);
-
-            try
+            if (!formulaSource.StartsWith("=") && !double.TryParse(formulaSource, NumberStyles.Any, CultureInfo.InvariantCulture, out _))
             {
-                if (_cellFormulas.TryGetValue(cellName, out string? formulaText) && !string.IsNullOrEmpty(formulaText))
+                if (visiting == null || visiting.Count == 0)
                 {
-                    string formula = formulaText.Substring(1);
-                    ValidateFormula(formula);
-                    var subEvaluator = new FormulaEvaluatorVisitor(name => GetCellValue(name, new HashSet<string>(visited, StringComparer.OrdinalIgnoreCase)));
-                    return subEvaluator.Evaluate(formula);
+                    throw new Exception("Помилка імені");
                 }
-
-                foreach (var child in grid.Children)
+                else
                 {
-                    if (child is Entry entry && entry.StyleId?.ToUpper() == cellName)
+                    throw new Exception("Помилка значення");
+                }
+            }
+
+            visiting ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (visiting.Contains(cellName))
+            {
+                throw new Exception("Помилка циклу");
+            }
+
+            if (formulaSource.StartsWith("="))
+            {
+                visiting.Add(cellName);
+                try
+                {
+                    string formula = formulaSource.Substring(1).Trim();
+
+                    if (Regex.IsMatch(formula, @"/\s*0(\.0+)?(\b|[\+\-\*\/\)]|$)", RegexOptions.IgnoreCase))
                     {
-                        string text = entry.Text?.Trim() ?? "";
-                        if (string.IsNullOrEmpty(text))
-                            return 0.0;
-
-                        if (text.StartsWith("="))
-                        {
-                            text = text.Substring(1);
-                        }
-
-                        if (double.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out double val))
-                        {
-                            return val;
-                        }
-
-                        throw new Exception("Помилка значення");
+                        throw new DivideByZeroException();
                     }
-                }
-            }
-            finally
-            {
-                visited.Remove(cellName);
-            }
 
-            throw new Exception("Помилка посилання");
-        }
+                    _tableEngine.ValidateFormula(formula);
 
-        private async void SaveButton_Clicked(object? sender, EventArgs? e)
-        {
-            try
-            {
-                string fileName = await DisplayPromptAsync("Збереження", "Введіть назву файлу:", "Зберегти", "Скасувати", "table1.json");
-                if (string.IsNullOrWhiteSpace(fileName)) return;
-
-                if (!fileName.EndsWith(".json"))
-                    fileName += ".json";
-
-                string folderPath = FileSystem.AppDataDirectory;
-                string filePath = Path.Combine(folderPath, fileName);
-
-                var cellData = new Dictionary<string, string>();
-
-                foreach (var kvp in _cellFormulas)
-                {
-                    cellData[kvp.Key] = kvp.Value;
-                }
-
-                foreach (var child in grid.Children)
-                {
-                    if (child is Entry entry && !string.IsNullOrEmpty(entry.StyleId))
+                    if (Regex.IsMatch(formula, @"^[A-Z]+\d+$", RegexOptions.IgnoreCase))
                     {
-                        string text = entry.Text?.Trim() ?? "";
-                        if (!string.IsNullOrEmpty(text) && !text.StartsWith("=") && !_cellFormulas.ContainsKey(entry.StyleId))
-                        {
-                            cellData[entry.StyleId] = text;
-                        }
+                        return GetCellValue(formula, visiting);
                     }
+
+                    var evaluator = new FormulaEvaluatorVisitor(name => GetCellValue(name, visiting));
+                    return evaluator.Evaluate(formula);
                 }
-
-                string jsonString = System.Text.Json.JsonSerializer.Serialize(cellData);
-                await File.WriteAllTextAsync(filePath, jsonString);
-
-                LoadSavedFilesList();
-                await DisplayAlert("Успіх", $"Файл {fileName} збережено!", "OK");
-            }
-            catch (Exception ex)
-            {
-                await DisplayAlert("Помилка", $"Не вдалося зберегти: {ex.Message}", "OK");
-            }
-        }
-
-        private async void ClearButton_Clicked(object? sender, EventArgs? e)
-        {
-            bool answer = await DisplayAlert("Очищення", "Ви дійсно хочете очистити всю таблицю?", "Так", "Ні");
-            if (answer)
-            {
-                _cellFormulas.Clear();
-                foreach (var child in grid.Children)
+                catch (DivideByZeroException)
                 {
-                    if (child is Entry entry)
+                    throw new Exception("Помилка ділення на нуль");
+                }
+                catch (Exception ex)
+                {
+                    string msg = ex.Message.ToLower();
+                    if (msg.Contains("ділен") || msg.Contains("div") || msg.Contains("zero") || msg.Contains("infinity") || msg.Contains("nan"))
+                        throw new Exception("Помилка ділення на нуль");
+                    if (msg.Contains("посилан") || msg.Contains("ref"))
+                        throw new Exception("Помилка посилання");
+                    if (msg.Contains("цикл") || msg.Contains("CYCLE"))
+                        throw new Exception("Помилка циклу");
+                    if (msg.Contains("імен") || msg.Contains("NAME"))
                     {
-                        entry.Text = "";
-                        entry.TextColor = Colors.White;
+                        if (visiting != null && visiting.Count > 1)
+                            throw new Exception("Помилка значення");
+                        throw;
                     }
+                    throw new Exception("Помилка значення");
                 }
-                if (textInput != null)
+                finally
                 {
-                    textInput.Text = "";
+                    visiting.Remove(cellName);
                 }
             }
+
+            if (double.TryParse(formulaSource, NumberStyles.Any, CultureInfo.InvariantCulture, out double val))
+            {
+                return val;
+            }
+
+            throw new Exception("Помилка значення");
         }
 
-        private async void ReadButton_Clicked(object? sender, EventArgs? e)
+        public async void SaveButton_Clicked(object? sender, EventArgs? e)
         {
-            if (savedFilesPicker.SelectedItem is string selectedFile)
-            {
-                LoadTableFromFile(selectedFile);
-            }
-            else
-            {
-                await DisplayAlert("Увага", "Виберіть файл зі списку!", "OK");
-            }
+            string fileName = await DisplayPromptAsync("Збереження", "Введіть назву файлу:", "Зберегти", "Скасувати", "table1.json");
+            if (string.IsNullOrWhiteSpace(fileName)) return;
+
+            if (!fileName.EndsWith(".json")) fileName += ".json";
+            string filePath = Path.Combine(FileSystem.AppDataDirectory, fileName);
+
+            var gridValues = grid.Children.OfType<Entry>()
+                                 .Where(e => !string.IsNullOrEmpty(e.StyleId))
+                                 .ToDictionary(e => e.StyleId!, e => e.Text?.Trim() ?? "");
+
+            _tableEngine.SaveState(filePath, gridValues);
+            LoadSavedFilesList();
+            await DisplayAlert("Успіх", $"Файл {fileName} збережено!", "OK");
         }
 
-        private void SavedFilesPicker_SelectedIndexChanged(object? sender, EventArgs? e)
+        public async void ClearButton_Clicked(object? sender, EventArgs? e)
+        {
+            if (!await DisplayAlert("Очищення", "Ви дійсно хочете очистити всю таблицю?", "Так", "Ні")) return;
+
+            _tableEngine.Clear();
+            foreach (var entry in grid.Children.OfType<Entry>())
+            {
+                entry.Text = "";
+                entry.TextColor = Colors.White;
+            }
+            if (textInput != null) textInput.Text = "";
+        }
+
+        public void SavedFilesPicker_SelectedIndexChanged(object? sender, EventArgs? e)
         {
             if (savedFilesPicker.SelectedItem is string selectedFile)
             {
@@ -532,49 +496,22 @@ namespace La1
         {
             try
             {
-                string folderPath = FileSystem.AppDataDirectory;
-                string filePath = Path.Combine(folderPath, fileName);
+                string filePath = Path.Combine(FileSystem.AppDataDirectory, fileName);
+                _tableEngine.LoadState(filePath);
 
-                if (!File.Exists(filePath)) return;
-
-                string jsonString = await File.ReadAllTextAsync(filePath);
-                var cellData = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(jsonString);
-
-                if (cellData == null) return;
-
-                _cellFormulas.Clear();
-                foreach (var child in grid.Children)
+                foreach (var entry in grid.Children.OfType<Entry>())
                 {
-                    if (child is Entry entry)
-                    {
-                        entry.Text = "";
-                        entry.TextColor = Colors.White;
-                    }
+                    entry.Text = "";
+                    entry.TextColor = Colors.White;
                 }
 
-                foreach (var kvp in cellData)
+                foreach (var kvp in _tableEngine.CellFormulas)
                 {
-                    string cellName = kvp.Key;
-                    string value = kvp.Value;
-
-                    if (value.StartsWith("="))
-                    {
-                        _cellFormulas[cellName] = value;
-                    }
-
-                    foreach (var child in grid.Children)
-                    {
-                        if (child is Entry entry && entry.StyleId == cellName)
-                        {
-                            entry.Text = value;
-                        }
-                    }
+                    var entry = grid.Children.OfType<Entry>().FirstOrDefault(e => e.StyleId == kvp.Key);
+                    if (entry != null) entry.Text = kvp.Value;
                 }
 
-                if (showFormulasSwitch != null)
-                {
-                    showFormulasSwitch.IsToggled = false;
-                }
+                if (showFormulasSwitch != null) showFormulasSwitch.IsToggled = false;
 
                 RecalculateAllCells();
                 await DisplayAlert("Успіх", $"Файл {fileName} завантажено!", "OK");
@@ -585,200 +522,108 @@ namespace La1
             }
         }
 
-        private async void ExitButton_Clicked(object? sender, EventArgs? e)
+        public async void ExitButton_Clicked(object? sender, EventArgs? e)
         {
-            bool answer = await DisplayAlert("Підтвердження", "Ви дійсно хочете вийти?", "Так", "Ні");
-            if (answer)
+            if (await DisplayAlert("Підтвердження", "Ви дійсно хочете вийти?", "Так", "Ні"))
             {
                 Environment.Exit(0);
             }
         }
 
-        private async void HelpButton_Clicked(object? sender, EventArgs? e)
+        public async void ShowAboutInfo_Clicked(object? sender, EventArgs? e)
         {
-            await DisplayAlert(
-                "Про програму",
-                "Лабораторна робота 1\nВаріант 6 (Набір: 1, 2, 4, 6)\n\nОперації: +, -, *, /, mod, div, ^, max, min\n\nВиконала: Мариніна Анна\nГрупа К-27",
-                "OK"
-            );
+            await DisplayAlert("Про програму", "Лабораторна робота 1\nВаріант 6\nВиконала: Мариніна Анна\nГрупа К-27", "OK");
         }
 
-        private void DeleteRowButton_Clicked(object? sender, EventArgs? e)
+        public async void ShowVariant6Reference_Clicked(object? sender, EventArgs? e)
         {
-            if (grid.RowDefinitions.Count > 2)
+            string referenceText =
+                "Операції та функції:\n" +
+                "• Бінарні операції: +, -, *, /\n" +
+                "• Цілочисельне ділення та залишок: mod, div\n" +
+                "• Піднесення у степінь: ^\n" +
+                "• Порівняння: <=, >=, <>\n" +
+                "• Логічне заперечення: not\n" +
+                "• Логічні операції: or, and\n\n" +
+                "Помилки:\n" +
+                "• ERR: DIV/0 — ділення на нуль\n" +
+                "• ERR: CYCLE — циклічна залежність\n" +
+                "• ERR: NAME — помилка імені / невідома функція\n" +
+                "• ERR: REF — неіснуюче посилання\n" +
+                "• ERR: VALUE — помилка значень\n" +
+                "• #N/A — відсутнє значення";
+
+            await DisplayAlert("ДОВІДКА (ВАРІАНТ 6)", referenceText, "OK");
+        }
+
+        public void DeleteRowButton_Clicked(object? sender, EventArgs? e)
+        {
+            if (grid.RowDefinitions.Count <= 2) return;
+
+            int targetRow = grid.Children.OfType<Entry>().FirstOrDefault(entry => entry.IsFocused) is Entry fe
+                ? Microsoft.Maui.Controls.Grid.GetRow(fe)
+                : grid.RowDefinitions.Count - 1;
+
+            var childrenToRemove = grid.Children.Where(child => child is BindableObject b && Microsoft.Maui.Controls.Grid.GetRow(b) == targetRow).ToList();
+            foreach (var child in childrenToRemove) grid.Children.Remove(child);
+
+            grid.RowDefinitions.RemoveAt(targetRow);
+            foreach (var child in grid.Children.OfType<BindableObject>())
             {
-                int targetRow = -1;
-
-                var focusedEntry = grid.Children.OfType<Entry>().FirstOrDefault(entry => entry.IsFocused);
-                if (focusedEntry != null)
-                {
-                    targetRow = Microsoft.Maui.Controls.Grid.GetRow(focusedEntry);
-                }
-
-                if (targetRow <= 0)
-                {
-                    targetRow = grid.RowDefinitions.Count - 1;
-                }
-
-                var childrenToRemove = new List<IView>();
-                foreach (var child in grid.Children)
-                {
-                    if (child is BindableObject bindable && Microsoft.Maui.Controls.Grid.GetRow(bindable) == targetRow)
-                    {
-                        childrenToRemove.Add(child);
-                    }
-                }
-
-                foreach (var child in childrenToRemove)
-                {
-                    grid.Children.Remove(child);
-                }
-
-                grid.RowDefinitions.RemoveAt(targetRow);
-
-                foreach (var child in grid.Children)
-                {
-                    if (child is BindableObject bindable)
-                    {
-                        int r = Microsoft.Maui.Controls.Grid.GetRow(bindable);
-                        if (r > targetRow)
-                        {
-                            Microsoft.Maui.Controls.Grid.SetRow(bindable, r - 1);
-                        }
-                    }
-                }
-
-                RefreshGridIndices();
+                int r = Microsoft.Maui.Controls.Grid.GetRow(child);
+                if (r > targetRow) Microsoft.Maui.Controls.Grid.SetRow(child, r - 1);
             }
+            RefreshGridIndices();
         }
 
-        private void DeleteColumnButton_Clicked(object? sender, EventArgs? e)
+        public void DeleteColumnButton_Clicked(object? sender, EventArgs? e)
         {
-            if (grid.ColumnDefinitions.Count > 2)
+            if (grid.ColumnDefinitions.Count <= 2) return;
+
+            int targetCol = grid.Children.OfType<Entry>().FirstOrDefault(entry => entry.IsFocused) is Entry fe
+                ? Microsoft.Maui.Controls.Grid.GetColumn(fe)
+                : grid.ColumnDefinitions.Count - 1;
+
+            var childrenToRemove = grid.Children.Where(child => child is BindableObject b && Microsoft.Maui.Controls.Grid.GetColumn(b) == targetCol).ToList();
+            foreach (var child in childrenToRemove) grid.Children.Remove(child);
+
+            grid.ColumnDefinitions.RemoveAt(targetCol);
+            foreach (var child in grid.Children.OfType<BindableObject>())
             {
-                int targetCol = -1;
-
-                var focusedEntry = grid.Children.OfType<Entry>().FirstOrDefault(entry => entry.IsFocused);
-                if (focusedEntry != null)
-                {
-                    targetCol = Microsoft.Maui.Controls.Grid.GetColumn(focusedEntry);
-                }
-
-                if (targetCol <= 0)
-                {
-                    targetCol = grid.ColumnDefinitions.Count - 1;
-                }
-
-                var childrenToRemove = new List<IView>();
-                foreach (var child in grid.Children)
-                {
-                    if (child is BindableObject bindable && Microsoft.Maui.Controls.Grid.GetColumn(bindable) == targetCol)
-                    {
-                        childrenToRemove.Add(child);
-                    }
-                }
-
-                foreach (var child in childrenToRemove)
-                {
-                    grid.Children.Remove(child);
-                }
-
-                grid.ColumnDefinitions.RemoveAt(targetCol);
-
-                foreach (var child in grid.Children)
-                {
-                    if (child is BindableObject bindable)
-                    {
-                        int c = Microsoft.Maui.Controls.Grid.GetColumn(bindable);
-                        if (c > targetCol)
-                        {
-                            Microsoft.Maui.Controls.Grid.SetColumn(bindable, c - 1);
-                        }
-                    }
-                }
-
-                RefreshGridIndices();
+                int c = Microsoft.Maui.Controls.Grid.GetColumn(child);
+                if (c > targetCol) Microsoft.Maui.Controls.Grid.SetColumn(child, c - 1);
             }
+            RefreshGridIndices();
         }
 
-        private void AddRowButton_Clicked(object? sender, EventArgs? e)
+        public void AddRowButton_Clicked(object? sender, EventArgs? e)
         {
             int newRow = grid.RowDefinitions.Count;
-            grid.RowDefinitions.Add(new RowDefinition { Height = 40 });
+            grid.RowDefinitions.Add(new RowDefinition { Height = TableConfig.CellHeight });
 
-            var label = new Label
-            {
-                Text = newRow.ToString(),
-                VerticalOptions = LayoutOptions.Center,
-                HorizontalOptions = LayoutOptions.Center,
-                FontAttributes = FontAttributes.Bold,
-                TextColor = Colors.White,
-                BackgroundColor = Colors.Transparent
-            };
-            Microsoft.Maui.Controls.Grid.SetRow(label, newRow);
-            Microsoft.Maui.Controls.Grid.SetColumn(label, 0);
-            grid.Children.Add(label);
+            var rowLabel = CreateHeaderLabel(newRow.ToString(), newRow, 0);
+            grid.Children.Add(rowLabel);
 
             for (int col = 0; col < grid.ColumnDefinitions.Count - 1; col++)
             {
                 string cellName = GetColumnName(col + 1) + newRow;
-
-                var entry = new Entry
-                {
-                    Text = "",
-                    StyleId = cellName,
-                    WidthRequest = 80,
-                    HeightRequest = 40,
-                    VerticalOptions = LayoutOptions.Center,
-                    HorizontalOptions = LayoutOptions.Center,
-                    TextColor = Colors.White,
-                    BackgroundColor = Color.FromArgb("#2A2A2A")
-                };
-                entry.Focused += Entry_Focused;
-                entry.Unfocused += Entry_Unfocused;
-                Microsoft.Maui.Controls.Grid.SetRow(entry, newRow);
-                Microsoft.Maui.Controls.Grid.SetColumn(entry, col + 1);
+                var entry = CreateCellEntry(cellName, newRow, col + 1);
                 grid.Children.Add(entry);
             }
         }
 
-        private void AddColumnButton_Clicked(object? sender, EventArgs? e)
+        public void AddColumnButton_Clicked(object? sender, EventArgs? e)
         {
             int newColumn = grid.ColumnDefinitions.Count;
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = 80 });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = TableConfig.CellWidth });
 
-            var label = new Label
-            {
-                Text = GetColumnName(newColumn),
-                VerticalOptions = LayoutOptions.Center,
-                HorizontalOptions = LayoutOptions.Center,
-                FontAttributes = FontAttributes.Bold,
-                TextColor = Colors.White,
-                BackgroundColor = Colors.Transparent
-            };
-            Microsoft.Maui.Controls.Grid.SetRow(label, 0);
-            Microsoft.Maui.Controls.Grid.SetColumn(label, newColumn);
-            grid.Children.Add(label);
+            var colLabel = CreateHeaderLabel(GetColumnName(newColumn), 0, newColumn);
+            grid.Children.Add(colLabel);
 
             for (int row = 0; row < grid.RowDefinitions.Count - 1; row++)
             {
                 string cellName = GetColumnName(newColumn) + (row + 1);
-
-                var entry = new Entry
-                {
-                    Text = "",
-                    StyleId = cellName,
-                    WidthRequest = 80,
-                    HeightRequest = 40,
-                    VerticalOptions = LayoutOptions.Center,
-                    HorizontalOptions = LayoutOptions.Center,
-                    TextColor = Colors.White,
-                    BackgroundColor = Color.FromArgb("#2A2A2A")
-                };
-                entry.Focused += Entry_Focused;
-                entry.Unfocused += Entry_Unfocused;
-                Microsoft.Maui.Controls.Grid.SetRow(entry, row + 1);
-                Microsoft.Maui.Controls.Grid.SetColumn(entry, newColumn);
+                var entry = CreateCellEntry(cellName, row + 1, newColumn);
                 grid.Children.Add(entry);
             }
         }
